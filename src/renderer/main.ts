@@ -1,5 +1,5 @@
 import { EditorView } from '@codemirror/view'
-import { initEditor, getEditorContent, setEditorContent, setEditorLang, clearDiagnostics, showDiagnostics, openDiagnosticsPanel } from './codemirror-setup'
+import { initEditor, getEditorContent, setEditorContent, setEditorLang, clearDiagnostics, showDiagnostics, openDiagnosticsPanel, onDocChange } from './codemirror-setup'
 
 interface FileNode {
   name: string
@@ -69,6 +69,8 @@ class EIDEApp {
   private cmView: EditorView | null = null
   private inlineInputResolve: ((value: string | null) => void) | null = null
   private inlineConfirmResolve: ((value: boolean) => void) | null = null
+  private autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+  private isModified: boolean = false
 
   constructor() {
     this.setupEventListeners()
@@ -173,6 +175,11 @@ class EIDEApp {
       this.cmView.dom.addEventListener('contextmenu', (e) => {
         e.preventDefault()
         this.showEditorContextMenu(e.clientX, e.clientY)
+      })
+      onDocChange(() => {
+        this.isModified = true
+        this.renderTabs()
+        this.debouncedAutoSave()
       })
     }
 
@@ -808,6 +815,9 @@ class EIDEApp {
   async openFile(filePath: string): Promise<void> {
     try {
       if (window.eideAPI) {
+        if (this.currentFile && this.currentFile !== filePath) {
+          await this.saveCurrentFile()
+        }
         let content: string
         if (this.isRemoteMode && this.sshConfig) {
           const result = await window.eideAPI.readRemoteFile(this.sshConfig, filePath)
@@ -820,6 +830,7 @@ class EIDEApp {
           setEditorContent(this.cmView, content)
           setEditorLang(this.cmView, filePath)
           this.currentFile = filePath
+          this.clearModifiedFlag()
           this.addTab(filePath)
         }
       }
@@ -834,8 +845,9 @@ class EIDEApp {
     tabsBar.innerHTML = this.openTabs.map((filePath, i) => {
       const fileName = filePath.split(/[\\/]/).pop() || 'untitled'
       const isActive = filePath === this.currentFile
+      const isDirty = isActive && this.isModified
       return `<div class="tab${isActive ? ' active' : ''}" data-tab-index="${i}" data-path="${filePath.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}">
-        <span>${fileName}</span>
+        <span>${fileName}</span>${isDirty ? '<span class="tab-dirty" title="未保存的修改">&bull;</span>' : ''}
         <span class="tab-close">&times;</span>
       </div>`
     }).join('')
@@ -851,10 +863,6 @@ class EIDEApp {
       this.openTabs.push(filePath)
     }
     this.renderTabs()
-
-    if (this.currentFile !== filePath) {
-      this.loadFileToEditor(filePath)
-    }
   }
 
   private async loadFileToEditor(filePath: string): Promise<void> {
@@ -865,6 +873,7 @@ class EIDEApp {
           setEditorContent(this.cmView, content)
           setEditorLang(this.cmView, filePath)
           this.currentFile = filePath
+          this.clearModifiedFlag()
         }
       }
     } catch (error) {
@@ -901,6 +910,10 @@ class EIDEApp {
   private async switchToTab(filePath: string): Promise<void> {
     const tabsBar = document.getElementById('tabsBar')
     if (!tabsBar) return
+
+    if (this.currentFile && this.currentFile !== filePath) {
+      await this.saveCurrentFile()
+    }
 
     tabsBar.querySelectorAll('.tab').forEach(t => {
       t.classList.toggle('active', t.getAttribute('data-path') === filePath)
@@ -955,16 +968,25 @@ class EIDEApp {
       } else {
         await window.eideAPI.writeFile(this.currentFile, content)
       }
+      this.clearModifiedFlag()
       console.log(`文件已保存: ${this.currentFile}`)
     } catch (error) {
       console.error('保存文件失败:', error)
     }
   }
 
-  private autoSaveCurrentFile(): void {
-    if (this.currentFile) {
-      this.saveCurrentFile()
+  private clearModifiedFlag(): void {
+    this.isModified = false
+    this.renderTabs()
+  }
+
+  private debouncedAutoSave(): void {
+    if (this.autoSaveTimer) {
+      clearTimeout(this.autoSaveTimer)
     }
+    this.autoSaveTimer = setTimeout(() => {
+      this.saveCurrentFile()
+    }, 500)
   }
 
   async saveAs(): Promise<void> {
@@ -2249,7 +2271,7 @@ class EIDEApp {
       case 'paste':
         navigator.clipboard.readText().then(text => {
           view.dispatch({ changes: { from, to, insert: text } })
-          this.autoSaveCurrentFile()
+          this.saveCurrentFile()
         }).catch(() => {
           this.showToast('粘贴失败', 'error')
         })
@@ -2259,7 +2281,7 @@ class EIDEApp {
           const newName = prompt('重构 - 输入新名称:', selectedText)
           if (newName && newName !== selectedText) {
             view.dispatch({ changes: { from, to, insert: newName } })
-            this.autoSaveCurrentFile()
+            this.saveCurrentFile()
           }
         } else {
           this.showToast('请先选中一段文本', 'info')
