@@ -56,9 +56,14 @@ export function getLangForFile(filePath: string): LanguageSupport | null {
 const languageCompartment = new Compartment()
 
 let cmEditorView: EditorView | null = null
+const docChangeCallbacks: Array<() => void> = []
 
 export function getCMView(): EditorView | null {
   return cmEditorView
+}
+
+export function onDocChange(cb: () => void): void {
+  docChangeCallbacks.push(cb)
 }
 
 export function initEditor(parent: HTMLElement): EditorView {
@@ -81,6 +86,11 @@ export function initEditor(parent: HTMLElement): EditorView {
       languageCompartment.of([]),
       indentUnit.of('    '),
       EditorState.tabSize.of(4),
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged) {
+          docChangeCallbacks.forEach(cb => cb())
+        }
+      }),
       keymap.of([
         ...closeBracketsKeymap,
         ...defaultKeymap,
