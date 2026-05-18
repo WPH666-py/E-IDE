@@ -15,8 +15,9 @@
     "electron": "electron .",
     "start": "npm run build && npm run electron",
     "pack": "npm run build && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& electron-builder --dir --x64 --ia32",
-    "dist": "npm run build && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npx @electron/packager . E-IDE --platform=win32 --arch=x64,ia32 --out=pkg-out --overwrite --no-prune --ignore=\"^build-out$\" --ignore=\"^pkg-out$\" --ignore=\"^dist-exe$\" --ignore=\"^dist-pkg$\" --ignore=\"^\\\\.idea$\" --ignore=\"^\\\\.git$\" --ignore=\"^README\\\\.md$\" --ignore=\"^scripts$\" --ignore=\"^sfx-launcher\\\\.cs$\" --ignore=\"^build-sfx\\\\.js$\" --ignore=\"^e-ide\\\\.png$\" --ignore=\"^e-ide\\\\.ico$\"",
+    "dist": "npm run build && node scripts/packager.js",
     "dist:portable": "npm run dist && node scripts/make-portable.js",
+    "dist:installer": "npm run dist && powershell -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
     "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc --noEmit"
   },
@@ -24,14 +25,17 @@
     "appId": "com.shui-ge.e-ide",
     "productName": "E-IDE",
     "directories": {
-      "output": "dist-exe"
+      "output": "release"
     },
     "files": [
       "dist/**/*",
       "package.json"
     ],
     "extraResources": [],
+    "npmRebuild": false,
     "win": {
+      "signAndEditExecutable": false,
+      "icon": "e-ide.ico",
       "target": [
         {
           "target": "nsis",
@@ -45,7 +49,10 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "E-IDE"
+      "shortcutName": "E-IDE",
+      "installerIcon": "e-ide.ico",
+      "uninstallerIcon": "e-ide.ico",
+      "installerHeaderIcon": "e-ide.ico"
     }
   },
   "keywords": [
