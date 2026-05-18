@@ -131,7 +131,7 @@ class SSHService {
         })
 
         readStream.on('end', () => {
-          resolve({ success: true, content: Buffer.concat(chunks).toString('utf-8') })
+          resolve({ success: true, content: Buffer.concat(chunks as any).toString('utf-8') })
         })
       } catch (error: any) {
         resolve({ success: false, error: `读取文件异常: ${error.message}` })
